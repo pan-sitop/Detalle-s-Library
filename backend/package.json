@@ -1,0 +1,20 @@
+{
+  "name": "prjbd2-backend",
+  "version": "1.0.0",
+  "description": "API REST para sistema de biblioteca - BD2",
+  "main": "app.js",
+  "scripts": {
+    "start": "node app.js",
+    "dev": "node --watch app.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.6",
+    "dotenv": "^16.6.1",
+    "express": "^4.22.2",
+    "oracledb": "^6.10.0"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs"
+}
