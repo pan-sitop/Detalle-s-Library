@@ -25,8 +25,17 @@ exports.login = async (req, res) => {
         const user = result.rows[0];
 
         // 2. Validar si la cuenta fue bloqueada por los triggers
-        if (user.ESTADO_CUENTA === 'BLOQUEADO') {
-            return res.status(403).json({ success: false, message: 'Acceso denegado: La cuenta está bloqueada.' });
+        if (user.ESTADO_CUENTA === 'BLOQUEADO' || user.ESTADO_CUENTA === 'SUSPENDIDO') {
+            const bloqueoQuery = `SELECT motivo FROM BLOQUEO WHERE persona_id = :id AND fecha_fin > SYSDATE ORDER BY fecha_inicio DESC FETCH FIRST 1 ROWS ONLY`;
+            const bloqueoResult = await connection.execute(bloqueoQuery, { id: user.PERSONA_ID });
+            const motivo = bloqueoResult.rows.length > 0 ? (bloqueoResult.rows[0].MOTIVO || bloqueoResult.rows[0].motivo) : 'Bloqueo administrativo.';
+            
+            return res.status(403).json({ 
+                success: false, 
+                message: 'Acceso denegado: La cuenta está suspendida.',
+                suspendido: true,
+                motivo: motivo
+            });
         }
 
         // 3. Validación de contraseña en texto plano (por requisito académico)

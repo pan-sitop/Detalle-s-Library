@@ -10,4 +10,9 @@ router.put('/prestamos/devolver', publicController.devolverPrestamo);
 router.post('/resenas', publicController.crearResena);
 router.get('/libros/:id/resenas', publicController.getResenasByLibro);
 router.post('/reservas', publicController.crearReserva);
+
+// Chatbot
+const chatController = require('../controllers/chatController');
+router.post('/chat', chatController.chat);
+
 module.exports = router;

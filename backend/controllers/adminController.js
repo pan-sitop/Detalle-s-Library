@@ -16,11 +16,25 @@ exports.getStats = async (req, res) => {
         // Llamada a la FUNCIÓN DE ORACLE fn_promedio_calificacion para toda la biblioteca (adaptada)
         const promedioResult = await connection.execute('SELECT NVL(ROUND(AVG(calificacion), 1), 0) AS promedio FROM RESENA');
         
+        // Gráfico de actividad: Préstamos por semana del mes actual
+        const chartResult = await connection.execute(`
+            SELECT TO_CHAR(fecha_prestamo, 'W') as semana, COUNT(*) as prestamos
+            FROM PRESTAMO 
+            WHERE EXTRACT(MONTH FROM fecha_prestamo) = EXTRACT(MONTH FROM SYSDATE)
+              AND EXTRACT(YEAR FROM fecha_prestamo) = EXTRACT(YEAR FROM SYSDATE)
+            GROUP BY TO_CHAR(fecha_prestamo, 'W')
+            ORDER BY semana
+        `);
+
         res.json({
             totalLibros: librosResult.rows[0]?.TOTAL || 0,
             prestamosActivos: prestamosResult.rows[0]?.TOTAL || 0,
             totalResenas: resenasResult.rows[0]?.TOTAL || 0,
-            calificacionPromedio: promedioResult.rows[0]?.PROMEDIO || 0
+            calificacionPromedio: promedioResult.rows[0]?.PROMEDIO || 0,
+            chartData: chartResult.rows.map(row => ({
+                semana: row.SEMANA || row.semana,
+                prestamos: row.PRESTAMOS || row.prestamos
+            }))
         });
     } catch (error) {
         res.status(500).json({ message: 'Error al obtener estadísticas' });
@@ -35,12 +49,10 @@ exports.getLibros = async (req, res) => {
     try {
         connection = await oracledb.getConnection();
         const result = await connection.execute(
-            `SELECT rd.recurso_id AS libro_id, rd.titulo, rd.isbn, rd.tipo AS formato, rd.idioma, 
-                    rd.anio_publicacion, rd.copias_disponibles, rd.editorial_id,
-                    e.nombre AS editorial_nombre
-             FROM RECURSO_DIGITAL rd
-             LEFT JOIN EDITORIAL e ON rd.editorial_id = e.editorial_id
-             ORDER BY rd.recurso_id DESC`
+            `SELECT recurso_id AS libro_id, titulo, isbn, tipo AS formato, idioma, 
+                    anio_publicacion, copias_disponibles, editorial_id
+             FROM RECURSO_DIGITAL
+             ORDER BY recurso_id DESC`
         );
         res.json(result.rows);
     } catch (error) {
@@ -132,8 +144,23 @@ exports.deleteLibro = async (req, res) => {
     try {
         connection = await oracledb.getConnection();
         const admin_id = req.body.admin_id || req.query.admin_id || 1;
-        await connection.execute(`BEGIN PKG_SESION.SET_ADMIN(:adminId); END;`, { adminId: admin_id }, { autoCommit: false });
-        await connection.execute('DELETE FROM RECURSO_DIGITAL WHERE recurso_id = :id', { id: Number(req.params.id) }, { autoCommit: true });
+        const id = Number(req.params.id);
+        
+        await connection.execute(`
+            BEGIN 
+                PKG_SESION.SET_ADMIN(:adminId);
+                
+                -- Limpiar dependencias con las tablas correctas
+                DELETE FROM CLASIFICADO_EN WHERE recurso_id = :id;
+                DELETE FROM ESCRIBE WHERE recurso_id = :id;
+                DELETE FROM CONTIENE WHERE recurso_id = :id;
+                DELETE FROM RESENA WHERE recurso_id = :id;
+                DELETE FROM CONTROLA WHERE recurso_id = :id;
+                
+                -- Finalmente borrar el recurso
+                DELETE FROM RECURSO_DIGITAL WHERE recurso_id = :id;
+            END;
+        `, { adminId: admin_id, id }, { autoCommit: true });
         res.json({ message: 'Recurso eliminado' });
     } catch (error) {
         res.status(500).json({ message: error.message || 'Error al eliminar' });
@@ -162,7 +189,7 @@ exports.getPrestamos = async (req, res) => {
     try {
         connection = await oracledb.getConnection();
         const result = await connection.execute(
-            `SELECT p.prestamo_id, rd.titulo AS libro, per.email AS usuario,
+            `SELECT p.prestamo_id, p.recurso_id, p.persona_id, rd.titulo AS libro, per.email AS usuario,
                     TO_CHAR(p.fecha_prestamo, 'YYYY-MM-DD') AS fecha_prestamo,
                     TO_CHAR(p.fecha_vencimiento, 'YYYY-MM-DD') AS fecha_vencimiento, p.estado
              FROM PRESTAMO p
@@ -183,8 +210,10 @@ exports.updatePrestamo = async (req, res) => {
     try {
         connection = await oracledb.getConnection();
         const admin_id = req.body.admin_id || req.query.admin_id || 1;
+        const estadoFinal = (req.body.estado || '').toUpperCase();
+        
         await connection.execute(`BEGIN PKG_SESION.SET_ADMIN(:adminId); END;`, { adminId: admin_id }, { autoCommit: false });
-        await connection.execute('UPDATE PRESTAMO SET estado = :estado WHERE prestamo_id = :id', { estado: req.body.estado, id: Number(req.params.id) }, { autoCommit: false });
+        await connection.execute('UPDATE PRESTAMO SET estado = :estado WHERE prestamo_id = :id', { estado: estadoFinal, id: Number(req.params.id) }, { autoCommit: false });
         await connection.commit();
         res.json({ message: 'Préstamo actualizado' });
     } catch (error) {
@@ -331,10 +360,71 @@ exports.getUsuariosMorosos = async (req, res) => {
     let connection;
     try {
         connection = await oracledb.getConnection();
-        const result = await connection.execute('SELECT * FROM VW_USUARIOS_MOROSOS');
+        const query = `
+            SELECT p.persona_id, p.nombre, p.apellido, p.email, u.estado_cuenta,
+                   b.motivo, b.fecha_fin
+            FROM PERSONA p
+            JOIN USUARIO u ON p.persona_id = u.persona_id
+            LEFT JOIN (
+                SELECT persona_id, motivo, fecha_fin 
+                FROM BLOQUEO 
+                WHERE fecha_fin > SYSDATE
+            ) b ON b.persona_id = p.persona_id
+            WHERE p.persona_id NOT IN (SELECT persona_id FROM ADMINISTRADOR)
+        `;
+        const result = await connection.execute(query);
         res.json(result.rows);
     } catch (error) {
         res.status(500).json({ message: 'Error al obtener usuarios' });
+    } finally {
+        if (connection) try { await connection.close(); } catch(e) {}
+    }
+};
+
+// POST /api/admin/usuarios/:id/suspender
+exports.suspenderUsuario = async (req, res) => {
+    let connection;
+    try {
+        connection = await oracledb.getConnection();
+        const { dias, motivo } = req.body;
+        const personaId = Number(req.params.id);
+        
+        // 1. Conseguir el nuevo bloqueo_id
+        const idResult = await connection.execute('SELECT NVL(MAX(bloqueo_id),0)+1 as new_id FROM BLOQUEO');
+        const bloqueoId = idResult.rows[0]?.NEW_ID || idResult.rows[0]?.new_id || 1;
+        
+        // 2. Insertar el bloqueo (El trigger TRG_ESTADO_BLOQUEADO pondrá estado='BLOQUEADO')
+        await connection.execute(`
+            INSERT INTO BLOQUEO (persona_id, bloqueo_id, motivo, tipo_bloqueo, fecha_inicio, fecha_fin)
+            VALUES (:personaId, :bloqueoId, :motivo, 'TEMPORAL', SYSDATE, SYSDATE + :dias)
+        `, { personaId, bloqueoId, motivo, dias }, { autoCommit: true });
+        
+        // 3. Forzar el estado a SUSPENDIDO también por si acaso
+        await connection.execute(`UPDATE USUARIO SET estado_cuenta = 'SUSPENDIDO' WHERE persona_id = :personaId`, { personaId }, { autoCommit: true });
+
+        res.json({ message: 'Usuario suspendido' });
+    } catch (error) {
+        res.status(500).json({ message: error.message || 'Error al suspender' });
+    } finally {
+        if (connection) try { await connection.close(); } catch(e) {}
+    }
+};
+
+// POST /api/admin/usuarios/:id/levantar
+exports.levantarSuspension = async (req, res) => {
+    let connection;
+    try {
+        connection = await oracledb.getConnection();
+        const personaId = Number(req.params.id);
+        
+        // Poner la fecha fin del bloqueo activo a ahora mismo
+        await connection.execute(`UPDATE BLOQUEO SET fecha_fin = SYSDATE WHERE persona_id = :personaId AND fecha_fin > SYSDATE`, { personaId }, { autoCommit: true });
+        // Cambiar estado a activo
+        await connection.execute(`UPDATE USUARIO SET estado_cuenta = 'ACTIVO' WHERE persona_id = :personaId`, { personaId }, { autoCommit: true });
+
+        res.json({ message: 'Suspensión levantada' });
+    } catch (error) {
+        res.status(500).json({ message: error.message || 'Error al levantar suspensión' });
     } finally {
         if (connection) try { await connection.close(); } catch(e) {}
     }

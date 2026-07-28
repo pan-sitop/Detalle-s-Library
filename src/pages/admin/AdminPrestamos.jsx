@@ -29,7 +29,7 @@ export default function AdminPrestamos() {
       await prestamoService.updateEstado(id, 'Devuelto', { admin_id: getAdminId() });
       
       setPrestamos((prev) =>
-        prev.map((p) => ((p.PRESTAMO_ID || p.prestamo_id) === id ? { ...p, estado: 'Devuelto', ESTADO: 'Devuelto' } : p))
+        prev.map((p) => ((p.PRESTAMO_ID || p.prestamo_id) === id ? { ...p, estado: 'DEVUELTO', ESTADO: 'DEVUELTO' } : p))
       );
       showToast(`"${prestamo.LIBRO || prestamo.libro}" marcado como devuelto`);
     } catch (err) {
@@ -99,7 +99,7 @@ export default function AdminPrestamos() {
                 <td className="px-5 py-3 text-muted">{p.FECHA_VENCIMIENTO || p.fecha_vencimiento}</td>
                 <td className="px-5 py-3"><Badge status={p.ESTADO || p.estado} /></td>
                 <td className="px-5 py-3">
-                  {(p.ESTADO || p.estado) !== 'Devuelto' && (
+                  {(p.ESTADO || p.estado || '').toUpperCase() !== 'DEVUELTO' && (
                     <button
                       onClick={() => handleDevolver(p)}
                       disabled={saving}

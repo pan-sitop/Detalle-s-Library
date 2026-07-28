@@ -19,6 +19,8 @@ router.delete('/resenas/:id', admin.deleteResena);
 router.get('/auditoria', admin.getAuditoria);
 router.get('/recursos', admin.getRecursosMasPrestados);
 router.get('/usuarios', admin.getUsuariosMorosos);
+router.post('/usuarios/:id/suspender', admin.suspenderUsuario);
+router.post('/usuarios/:id/levantar', admin.levantarSuspension);
 
 // RUTAS DE LISTAS DE LECTURA (Incluida la cruz de eliminar)
 router.get('/listas/:userId', admin.getListasByUser);

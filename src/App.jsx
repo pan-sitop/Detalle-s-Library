@@ -19,6 +19,7 @@ import AdminResenas from './pages/admin/AdminResenas';
 // 👇 AQUÍ ESTÁN LAS IMPORTACIONES QUE FALTABAN 👇
 import AdminUsuariosMorosos from './pages/admin/AdminUsuariosMorosos'; 
 import AdminConsolaSQL from './pages/admin/AdminConsolaSQL';
+import AdminReportes from './pages/admin/AdminReportes';
 
 function App() {
   return (
@@ -47,6 +48,7 @@ function App() {
           <Route path="resenas" element={<AdminResenas />} />
           <Route path="morosos" element={<AdminUsuariosMorosos />} />
           <Route path="sql" element={<AdminConsolaSQL />} />
+          <Route path="reportes" element={<AdminReportes />} />
         </Route>
       </Routes>
     </BrowserRouter>

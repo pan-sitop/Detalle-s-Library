@@ -74,9 +74,6 @@ export default function Proximamente() {
             <div key={idRecurso} className="bg-white/5 rounded-xl border border-white/10 overflow-hidden flex flex-col group hover:bg-white/10 transition-all">
               
               <div className="h-48 bg-gradient-to-br from-purple-900/40 to-slate-900 flex items-center justify-center p-4 text-center relative overflow-hidden">
-                <span className="absolute top-2 right-2 bg-red-500/20 text-red-400 text-xs font-bold px-2 py-1 rounded-md border border-red-500/30">
-                  0 COPIAS
-                </span>
                 <h3 className="text-lg font-bold text-slate-200 line-clamp-3 group-hover:text-purple-300 transition-colors">
                   {libro.TITULO || libro.titulo}
                 </h3>

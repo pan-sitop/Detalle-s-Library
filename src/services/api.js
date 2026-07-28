@@ -55,7 +55,12 @@ export const auditoriaService = {
 export const statsService = {
   getResumen: () => request('/admin/stats'),
   getRecursos: () => request('/admin/recursos'),
-  getUsuarios: () => request('/admin/usuarios'),
+};
+
+export const morososService = {
+  getAll: () => request('/admin/usuarios'),
+  suspender: (id, dias, motivo) => request(`/admin/usuarios/${id}/suspender`, { method: 'POST', body: JSON.stringify({ dias, motivo }) }),
+  levantar: (id) => request(`/admin/usuarios/${id}/levantar`, { method: 'POST' }),
 };
 
 export const listaService = {
@@ -65,6 +70,10 @@ export const listaService = {
   addLibro: (listaId, data) => request(`/admin/listas/${listaId}/libros`, { method: 'POST', body: JSON.stringify(data) }),
   // 👇 AQUÍ ESTÁ LA FUNCIÓN PARA QUE LA CRUZ FUNCIONE 👇
   removeLibro: (listaId, recursoId) => request(`/admin/listas/${listaId}/libros/${recursoId}`, { method: 'DELETE' }),
+};
+
+export const chatService = {
+  sendMessage: (message) => request('/public/chat', { method: 'POST', body: JSON.stringify({ message }) })
 };
 
 export const authService = {

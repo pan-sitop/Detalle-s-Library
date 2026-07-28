@@ -2,8 +2,8 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Search, SlidersHorizontal, X, BookmarkPlus, Eye, BookOpen, Loader2, FolderPlus, Check } from 'lucide-react';
-import { libroService, listaService } from '../services/api';
+import { Search, X, BookmarkPlus, Eye, BookOpen, Loader2, FolderPlus, Check } from 'lucide-react';
+import { libroService, listaService, prestamoService } from '../services/api';
 import { useToast } from '../context/ToastContext';
 import { useAuth } from '../context/AuthContext';
 
@@ -12,11 +12,14 @@ const CATEGORIAS = ['Todos', 'Ficción', 'Informática', 'Ciencia', 'Historia', 
 export default function Explorar() {
   const [busqueda, setBusqueda] = useState('');
   const [categoriaActiva, setCategoriaActiva] = useState('Todos');
-  const [sidebarAbierto, setSidebarAbierto] = useState(false);
   
   const [catalogoDb, setCatalogoDb] = useState([]);
   const [loading, setLoading] = useState(true);
   
+  // Estado para el cruce de préstamos del usuario logueado
+  const [solicitadosIds, setSolicitadosIds] = useState(new Set());
+  const [solicitandoId, setSolicitandoId] = useState(null);
+
   const { showToast } = useToast();
   const { isAuthenticated, user } = useAuth();
   const navigate = useNavigate();
@@ -29,20 +32,47 @@ export default function Explorar() {
   const [creatingList, setCreatingList] = useState(false);
 
   useEffect(() => {
-    const fetchLibros = async () => {
+    const fetchDatos = async () => {
       try {
         setLoading(true);
-        const data = await libroService.getAll();
-        setCatalogoDb(data || []);
+        const [librosData, prestamosData] = await Promise.all([
+          libroService.getAll().catch(() => []),
+          prestamoService.getAll().catch(() => [])
+        ]);
+
+        setCatalogoDb(librosData || []);
+
+        // Cruzar los libros con los préstamos/reservas activos del usuario
+        if (user) {
+          const userId = user.id || user.PERSONA_ID || user.persona_id;
+          const userEmail = (user.email || user.CORREO || user.correo || '').toLowerCase();
+
+          const idsSolicitados = new Set();
+          (prestamosData || []).forEach((p) => {
+            const pUserId = p.PERSONA_ID || p.persona_id;
+            const pEmail = (p.USUARIO || p.usuario || p.CORREO || p.correo || '').toLowerCase();
+            const estado = (p.ESTADO || p.estado || '').toUpperCase();
+
+            const esDeUsuario = (userId && Number(pUserId) === Number(userId)) || (userEmail && pEmail === userEmail);
+            const estaActivo = estado === 'ACTIVO' || estado === 'PENDIENTE' || estado === 'EN PROCESO';
+
+            if (esDeUsuario && estaActivo) {
+              const recId = Number(p.RECURSO_ID || p.recurso_id);
+              if (recId) idsSolicitados.add(recId);
+            }
+          });
+          setSolicitadosIds(idsSolicitados);
+        }
       } catch (error) {
         showToast('Error al cargar los libros del servidor', 'error');
       } finally {
         setLoading(false);
       }
     };
-    fetchLibros();
-  }, []);
+    fetchDatos();
+  }, [user]);
 
+  // Portadas estáticas originales
   const getCoverUrl = (id) => {
     const covers = [
       'https://images.unsplash.com/photo-1544947950-fa07a98d237f?auto=format&fit=crop&q=80&w=400&h=600',
@@ -54,19 +84,77 @@ export default function Explorar() {
     return covers[(id || 0) % covers.length];
   };
 
-  // CORRECCIÓN: Todos los recursos base se fuerzan visualmente a Ficción
-  const getCategoria = () => 'Ficción';
+  // Función para normalizar texto (quita tildes y pasa a minúsculas)
+  const normalizar = (str) => {
+    if (!str) return '';
+    let s = str.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+    // Parche para caracteres corruptos insertados por consola Windows (CP850)
+    s = s.replace(/\u00a0/g, 'a'); // 'á' corrupta
+    s = s.replace(/\u00a1/g, 'i'); // 'í' corrupta
+    return s;
+  };
 
+  // Filtrado a prueba de tildes
   const librosFiltrados = catalogoDb.filter((libro) => {
     const titulo = libro.TITULO || libro.titulo || '';
-    const editorial = libro.EDITORIAL_NOMBRE || libro.editorial_nombre || '';
-    const categoriaLibro = getCategoria();
+    const editorial = libro.EDITORIAL || libro.editorial || libro.EDITORIAL_NOMBRE || libro.editorial_nombre || '';
+    
+    const categoriaLibro = libro.GENERO || libro.genero || 'Ficción';
 
-    const coincideCategoria = categoriaActiva === 'Todos' || categoriaLibro === categoriaActiva;
-    const coincideBusqueda = titulo.toLowerCase().includes(busqueda.toLowerCase()) || editorial.toLowerCase().includes(busqueda.toLowerCase());
+    const coincideCategoria = categoriaActiva === 'Todos' || normalizar(categoriaLibro) === normalizar(categoriaActiva);
+    const coincideBusqueda = normalizar(titulo).includes(normalizar(busqueda)) || normalizar(editorial).includes(normalizar(busqueda));
       
     return coincideCategoria && coincideBusqueda;
   });
+
+  // Lógica funcional de Solicitud de Préstamo (Optimistic UI)
+  const handleSolicitar = async (libro) => {
+    if (!isAuthenticated) {
+      showToast('Debes iniciar sesión para solicitar un préstamo', 'info');
+      navigate('/login');
+      return;
+    }
+
+    const recId = Number(libro.RECURSO_ID || libro.recurso_id || libro.LIBRO_ID || libro.libro_id);
+    const uid = user?.id || user?.PERSONA_ID || user?.persona_id;
+
+    if (!recId || !uid) {
+      showToast('Información incompleta para solicitar el préstamo', 'error');
+      return;
+    }
+
+    setSolicitandoId(recId);
+    try {
+      await prestamoService.solicitar({ recurso_id: recId, persona_id: uid });
+      
+      // OPTIMISTIC UI: El botón cambia instantáneamente a "Ya solicitado" sin recargar
+      setSolicitadosIds((prev) => new Set(prev).add(recId));
+      showToast('Préstamo solicitado exitosamente', 'success');
+
+      // NUEVO: Agregar automáticamente a la lista "general" para que el usuario pueda devolverlo desde allí
+      try {
+        let listas = await listaService.getByUser(uid);
+        let listaGeneral = (listas || []).find(l => (l.NOMBRE_LISTA || l.nombre_lista)?.toLowerCase() === 'general');
+        
+        if (!listaGeneral) {
+          await listaService.create({ nombre_lista: 'general', persona_id: uid });
+          listas = await listaService.getByUser(uid);
+          listaGeneral = (listas || []).find(l => (l.NOMBRE_LISTA || l.nombre_lista)?.toLowerCase() === 'general');
+        }
+
+        if (listaGeneral) {
+          const listaId = listaGeneral.LISTA_ID || listaGeneral.lista_id;
+          await listaService.addLibro(listaId, { recurso_id: recId }).catch(() => {}); // Ignorar error si ya está
+        }
+      } catch (errLista) {
+        console.error('Error auto-agregando a lista general', errLista);
+      }
+    } catch (err) {
+      showToast(err.message || 'Error al solicitar el préstamo', 'error');
+    } finally {
+      setSolicitandoId(null);
+    }
+  };
 
   const handleVerDetalles = (libro) => {
     const id = libro.RECURSO_ID || libro.recurso_id || libro.LIBRO_ID || libro.libro_id;
@@ -175,8 +263,13 @@ export default function Explorar() {
                 {librosFiltrados.map((libro, idx) => {
                   const id = libro.RECURSO_ID || libro.recurso_id || libro.LIBRO_ID || libro.libro_id;
                   const titulo = libro.TITULO || libro.titulo;
-                  const editorial = libro.EDITORIAL_NOMBRE || libro.editorial_nombre || 'Ed. Desconocida';
-                  const categoria = getCategoria();
+                  const editorial = libro.EDITORIAL || libro.editorial || libro.EDITORIAL_NOMBRE || libro.editorial_nombre || 'Ed. Desconocida';
+                  
+                  // Tomamos la categoría real, igual que en el filtro.
+                  const categoria = libro.GENERO || libro.genero || 'Ficción';
+
+                  const isSolicitado = solicitadosIds.has(Number(id));
+                  const isSolicitando = solicitandoId === Number(id);
 
                   return (
                     <motion.div key={id} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: idx * 0.05 }}
@@ -186,14 +279,32 @@ export default function Explorar() {
                         <img src={getCoverUrl(id)} alt={titulo} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110 opacity-90" />
                         
                         <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex flex-col items-center justify-end p-3 gap-2">
-                          <button onClick={() => handleAddToList(libro)} className="w-full bg-purple-600 hover:bg-purple-500 text-white py-2 rounded-lg flex items-center justify-center gap-2 text-sm font-medium transition-colors">
+                          
+                          {/* Botón Solicitar con Lógica Optimista */}
+                          {isSolicitado ? (
+                            <button disabled className="w-full bg-[#1A1825]/90 border border-slate-700/60 text-slate-400 py-2 rounded-lg flex items-center justify-center gap-2 text-xs font-medium cursor-not-allowed">
+                              <Check className="w-4 h-4 text-emerald-400" /> Ya solicitado
+                            </button>
+                          ) : (
+                            <button 
+                              onClick={() => handleSolicitar(libro)} 
+                              disabled={isSolicitando}
+                              className="w-full bg-purple-600 hover:bg-purple-500 text-white py-2 rounded-lg flex items-center justify-center gap-2 text-xs font-medium transition-colors disabled:opacity-50"
+                            >
+                              {isSolicitando ? <Loader2 className="w-4 h-4 animate-spin" /> : <><Check className="w-4 h-4" /> Solicitar</>}
+                            </button>
+                          )}
+
+                          <button onClick={() => handleAddToList(libro)} className="w-full bg-white/10 hover:bg-white/20 text-white py-2 rounded-lg flex items-center justify-center gap-2 text-xs font-medium transition-colors">
                             <BookmarkPlus className="w-4 h-4" /> Agregar
                           </button>
-                          <button onClick={() => handleVerDetalles(libro)} className="w-full bg-white/10 hover:bg-white/20 text-white py-2 rounded-lg flex items-center justify-center gap-2 text-sm font-medium transition-colors">
+
+                          <button onClick={() => handleVerDetalles(libro)} className="w-full bg-white/10 hover:bg-white/20 text-white py-2 rounded-lg flex items-center justify-center gap-2 text-xs font-medium transition-colors">
                             <Eye className="w-4 h-4" /> Detalles
                           </button>
                         </div>
                       </div>
+
                       <div className="p-4 flex-grow flex flex-col justify-between">
                         <div>
                           <h3 className="font-bold text-white truncate text-sm mb-1 tracking-tight">{titulo}</h3>

@@ -8,14 +8,23 @@ export default function AdminDashboard() {
   const { data: stats, loading: loadingStats } = useApi(statsService.getResumen, []);
   const { data: recursos, loading: loadingRecursos } = useApi(statsService.getRecursos, []);
   
-  // Datos simulados para nuestro nuevo gráfico de Tailwind
-  const chartData = [
-    { mes: 'Ene', prestamos: 45, altura: 'h-[45%]' },
-    { mes: 'Feb', prestamos: 60, altura: 'h-[60%]' },
-    { mes: 'Mar', prestamos: 30, altura: 'h-[30%]' },
-    { mes: 'Abr', prestamos: 80, altura: 'h-[80%]' },
-    { mes: 'May', prestamos: 55, altura: 'h-[55%]' },
-    { mes: 'Jun', prestamos: 95, altura: 'h-[95%]' },
+  // Calcular datos del gráfico dinámicamente con los datos de Oracle
+  const realChartData = stats?.chartData || [];
+  const maxPrestamos = Math.max(...realChartData.map(d => d.prestamos), 1);
+  
+  const chartData = realChartData.length > 0 ? realChartData.map(data => {
+    // Calculamos el porcentaje, asegurando un mínimo para que se vea la barra si es > 0
+    const percentage = Math.max(Math.round((data.prestamos / maxPrestamos) * 100), data.prestamos > 0 ? 5 : 0);
+    return {
+      etiqueta: `Sem ${data.semana}`,
+      prestamos: data.prestamos,
+      altura: `${percentage}%`
+    };
+  }) : [
+    { etiqueta: 'S1', prestamos: 0, altura: '0%' },
+    { etiqueta: 'S2', prestamos: 0, altura: '0%' },
+    { etiqueta: 'S3', prestamos: 0, altura: '0%' },
+    { etiqueta: 'S4', prestamos: 0, altura: '0%' }
   ];
 
   return (
@@ -57,12 +66,12 @@ export default function AdminDashboard() {
           )}
         </section>
 
-        {/* SECCIÓN 2: GRÁFICO INVENTADO DE ACTIVIDAD */}
+        {/* SECCIÓN 2: GRÁFICO REAL DE ACTIVIDAD */}
         <section className="bg-bg-card border border-border rounded-xl p-6 flex flex-col">
           <div className="flex items-center justify-between mb-6">
             <div>
               <h2 className="text-xl font-serif font-bold text-white">Actividad de Préstamos</h2>
-              <p className="text-xs text-muted mt-1">Últimos 6 meses (Simulado)</p>
+              <p className="text-xs text-muted mt-1">Préstamos por semana (mes actual)</p>
             </div>
             <div className="p-2 bg-purple/10 rounded-lg">
               <TrendingUp className="text-purple" size={20} />
@@ -73,16 +82,17 @@ export default function AdminDashboard() {
           <div className="flex-1 flex items-end justify-between gap-2 h-56 mt-4 border-b border-border pb-2">
             {chartData.map((data, index) => (
               <div key={index} className="flex flex-col items-center gap-2 w-full h-full justify-end group">
-                {/* Tooltip simulado (Valor numérico) */}
+                {/* Tooltip dinámico */}
                 <span className="text-xs text-muted opacity-0 group-hover:opacity-100 transition-opacity duration-300">
                   {data.prestamos}
                 </span>
-                {/* Barra dinámica */}
+                {/* Barra dinámica usando inline styles para evitar problemas con Tailwind JIT */}
                 <div 
-                  className={`w-full max-w-[2.5rem] bg-brand-gradient rounded-t-md ${data.altura} transition-all duration-500 shadow-[0_0_15px_rgba(168,85,247,0.15)] group-hover:brightness-125`}
+                  className="w-full max-w-[2.5rem] bg-brand-gradient rounded-t-md transition-all duration-500 shadow-[0_0_15px_rgba(168,85,247,0.15)] group-hover:brightness-125"
+                  style={{ height: data.altura }}
                 ></div>
-                {/* Etiqueta del Mes */}
-                <span className="text-xs text-muted font-medium">{data.mes}</span>
+                {/* Etiqueta Semanal */}
+                <span className="text-xs text-muted font-medium">{data.etiqueta}</span>
               </div>
             ))}
           </div>

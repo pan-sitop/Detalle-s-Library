@@ -1,14 +1,17 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { BookOpen, Mail, Lock, ArrowRight, Loader2 } from 'lucide-react';
+import { BookOpen, Mail, Lock, ArrowRight, Loader2, Ban, Eye, EyeOff } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
+import Modal from '../components/admin/Modal';
 
 export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [suspendedData, setSuspendedData] = useState(null);
   const navigate = useNavigate();
   const { login } = useAuth();
   const { showToast } = useToast();
@@ -38,7 +41,11 @@ export default function Login() {
           }
         }, 500);
       } else {
-        showToast(data.message || 'Credenciales inválidas', 'error');
+        if (data.suspendido) {
+          setSuspendedData({ motivo: data.motivo });
+        } else {
+          showToast(data.message || 'Credenciales inválidas', 'error');
+        }
       }
     } catch (err) {
       showToast('No se pudo conectar con el servidor', 'error');
@@ -103,14 +110,21 @@ export default function Login() {
                 <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
                 <input
                   id="password"
-                  type="password"
+                  type={showPassword ? "text" : "password"}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
                   required
                   disabled={isLoading}
-                  className="w-full bg-[#1A1825] text-white placeholder:text-slate-600 pl-11 pr-4 py-3.5 rounded-xl text-sm border border-transparent outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="w-full bg-[#1A1825] text-white placeholder:text-slate-600 pl-11 pr-12 py-3.5 rounded-xl text-sm border border-transparent outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition-colors"
+                >
+                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
               </div>
             </div>
 
@@ -167,6 +181,31 @@ export default function Login() {
           Al iniciar sesión, aceptas nuestros Términos y Política de Privacidad.
         </p>
       </motion.div>
+
+      {/* Modal de Suspensión */}
+      <Modal open={!!suspendedData} onClose={() => setSuspendedData(null)} title="Cuenta Suspendida">
+        <div className="text-center py-4 space-y-4">
+          <div className="flex justify-center">
+            <div className="p-4 bg-red-500/10 rounded-full">
+              <Ban className="text-red-500" size={40} />
+            </div>
+          </div>
+          <h3 className="text-xl font-bold text-white">¡No puedes iniciar sesión!</h3>
+          <p className="text-muted">
+            Tu cuenta ha sido suspendida temporalmente.
+          </p>
+          <div className="bg-bg p-4 rounded-lg border border-border text-left">
+            <span className="text-xs text-slate-400 uppercase tracking-wider font-bold">Motivo de la suspensión:</span>
+            <p className="text-red-400 font-medium mt-1">{suspendedData?.motivo}</p>
+          </div>
+          <button 
+            onClick={() => setSuspendedData(null)}
+            className="w-full mt-4 bg-bg border border-border text-white py-2 rounded-lg hover:bg-bg-hover transition-colors font-medium"
+          >
+            Entendido
+          </button>
+        </div>
+      </Modal>
     </div>
   );
 }

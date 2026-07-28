@@ -1,6 +1,6 @@
 import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
-import { ArrowRight } from 'lucide-react';
+import { ArrowRight, Book, Library, Bookmark, Sparkles, Feather, Coffee } from 'lucide-react';
 
 export default function HeroSection() {
   const handleScrollToFeature = () => {
@@ -11,10 +11,42 @@ export default function HeroSection() {
   };
 
   return (
-    <section className="relative min-h-[calc(100vh-80px)] flex items-center justify-center overflow-hidden w-full">
-      {/* Background glow effects */}
-      
-      
+    <section className="relative min-h-[calc(100vh-80px)] flex items-center justify-center overflow-hidden w-full bg-[#0B0A10]">
+      {/* Background glow effects & Floating Icons */}
+      <div className="absolute inset-0 z-0 pointer-events-none overflow-hidden">
+        {/* Subtle Background Glows */}
+        <div className="absolute top-1/4 left-1/4 w-[500px] h-[500px] bg-purple-900/20 rounded-full blur-[120px] mix-blend-screen" />
+        <div className="absolute bottom-1/4 right-1/4 w-[400px] h-[400px] bg-blue-900/10 rounded-full blur-[100px] mix-blend-screen" />
+        
+        {/* Floating Animated Icons */}
+        {[
+          { Icon: Book, size: 48, top: '15%', left: '12%', delay: 0, duration: 4 },
+          { Icon: Library, size: 64, top: '65%', left: '8%', delay: 1, duration: 5 },
+          { Icon: Bookmark, size: 40, top: '25%', left: '85%', delay: 2, duration: 4.5 },
+          { Icon: Sparkles, size: 38, top: '80%', left: '40%', delay: 2.5, duration: 5.5 },
+          { Icon: Feather, size: 44, top: '15%', left: '60%', delay: 1.5, duration: 4 },
+          { Icon: Coffee, size: 56, top: '75%', left: '82%', delay: 0.5, duration: 3.5 }
+        ].map((item, idx) => (
+          <motion.div
+            key={idx}
+            initial={{ opacity: 0 }}
+            animate={{ 
+              opacity: [0.1, 0.25, 0.1],
+              y: [0, -25, 0],
+              rotate: [0, 8, -8, 0]
+            }}
+            transition={{
+              opacity: { duration: 3, repeat: Infinity, ease: "easeInOut", delay: item.delay },
+              y: { duration: item.duration, repeat: Infinity, ease: "easeInOut", delay: item.delay },
+              rotate: { duration: item.duration * 1.5, repeat: Infinity, ease: "easeInOut", delay: item.delay }
+            }}
+            className="absolute text-purple-400"
+            style={{ top: item.top, left: item.left }}
+          >
+            <item.Icon size={item.size} strokeWidth={1} />
+          </motion.div>
+        ))}
+      </div>
 
       <div className="relative z-10 flex flex-col items-center justify-center text-center px-6 py-16 w-full">
         <motion.div
